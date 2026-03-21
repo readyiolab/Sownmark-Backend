@@ -1,6 +1,7 @@
 const db = require('../config/db');
 const slugify = require('slugify');
 const { uploadToSpaces } = require('../middleware/upload');
+const redis = require('../config/redis');
 
 const createBlog = async (req, res) => {
   try {
@@ -169,15 +170,18 @@ const getBlogById = async (req, res) => {
       return res.status(400).json({ error: 'Invalid blog ID' });
     }
 
-    const blog = await db.select('tbl_blogs', '*', 'id = ?', [parsedId]);
-    
-
-    if (!blog) {
-      return res.status(404).json({ error: 'Blog not found' });
-    }
-
     // Ensure blogData is a single object
     const blogData = blog; // db.select returns a single RowDataPacket or undefined
+
+    // Redis View Counting
+    let viewCount = 0;
+    try {
+      const redisKey = `blog:views:${parsedId}`;
+      viewCount = await redis.incr(redisKey);
+    } catch (redisError) {
+      console.error('Redis view count error:', redisError);
+      // Fallback: Continue without view count if Redis fails
+    }
 
     let category = [];
     let tags = [];
@@ -198,6 +202,7 @@ const getBlogById = async (req, res) => {
       ...blogData,
       category,
       tags,
+      views: viewCount,
       comments: comments.map(comment => ({
         ...comment,
         created_at: new Date(comment.created_at),
