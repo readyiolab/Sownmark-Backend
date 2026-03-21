@@ -19,6 +19,7 @@ const {
 // Public routes
 router.get('/', getAllBlogs);
 router.get('/:id', getBlogById);
+router.get('/slug/:slug', getBlogBySlug);
 router.get('/:id/comments', getCommentsByBlogId);
 router.post('/:id/likes', incrementLikes);
 router.post('/:id/shares', incrementShares);

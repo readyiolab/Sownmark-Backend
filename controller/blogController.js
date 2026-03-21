@@ -271,14 +271,14 @@ const getBlogById = async (req, res) => {
 
     res.json(finalResponse);
 
-    // Cache the response for 1 hour
+    // Cache by slug for 1 hour
     try {
       await redis.set(cacheKey, finalResponse, { ex: 3600 });
     } catch (err) {
       console.error('Redis cache set error:', err);
     }
   } catch (error) {
-    console.error('Error fetching blog:', error);
+    console.error('Error fetching blog by slug:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 };
@@ -426,5 +426,6 @@ module.exports = {
   incrementShares,
   createComment,
   deleteComment,
-  getCommentsByBlogId
+  getCommentsByBlogId,
+  getBlogBySlug
 };
