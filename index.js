@@ -6,8 +6,16 @@ const blogRoutes = require('./routes/blogRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const jobRoutes = require('./routes/jobRoutes'); 
 const marketingRoutes = require('./routes/marketingRoutes');
+const compression = require('compression');
+const helmet = require('helmet');
 
 const app = express();
+
+// Use compression and helmet for better performance and security
+app.use(compression());
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP to avoid blocking external scripts for now
+}));
 
 // Allowed origins list
 const allowedOrigins = [
@@ -31,7 +39,6 @@ app.use(cors({
     
     // Check if origin is in allowed list
     if (allowedOrigins.includes(origin)) {
-      console.log('Origin allowed:', origin);
       return callback(null, true);
     }
     
