@@ -50,6 +50,13 @@ const createBlog = async (req, res) => {
     });
 
     res.status(201).json({ message: 'Blog created successfully', id: result.insertId });
+    
+    // Invalidate list cache
+    try {
+      await redis.del('blog:all');
+    } catch (err) {
+      console.error('Redis cache invalidation error:', err);
+    }
   } catch (error) {
     console.error('Error creating blog:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -118,6 +125,14 @@ const updateBlog = async (req, res) => {
     }
 
     res.json({ message: 'Blog updated successfully' });
+    
+    // Invalidate caches
+    try {
+      await redis.del(`blog:data:${blogId}`);
+      await redis.del('blog:all');
+    } catch (err) {
+      console.error('Redis cache invalidation error:', err);
+    }
   } catch (error) {
     console.error('Error updating blog:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -138,6 +153,14 @@ const deleteBlog = async (req, res) => {
     }
 
     res.json({ message: 'Blog and associated comments deleted successfully' });
+    
+    // Invalidate caches
+    try {
+      await redis.del(`blog:data:${id}`);
+      await redis.del('blog:all');
+    } catch (err) {
+      console.error('Redis cache invalidation error:', err);
+    }
   } catch (error) {
     console.error('Error deleting blog:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -146,6 +169,16 @@ const deleteBlog = async (req, res) => {
 
 const getAllBlogs = async (req, res) => {
   try {
+    // Try to get from cache
+    try {
+      const cachedBlogs = await redis.get('blog:all');
+      if (cachedBlogs) {
+        return res.json(cachedBlogs);
+      }
+    } catch (err) {
+      console.error('Redis get all error:', err);
+    }
+
     const blogs = await db.selectAll('tbl_blogs');
     const formattedBlogs = blogs.map((blog) => ({
       ...blog,
@@ -154,6 +187,13 @@ const getAllBlogs = async (req, res) => {
     }));
    
     res.json(formattedBlogs);
+
+    // Store in cache for 30 minutes
+    try {
+      await redis.set('blog:all', formattedBlogs, { ex: 1800 });
+    } catch (err) {
+      console.error('Redis set all error:', err);
+    }
   } catch (error) {
     console.error('Error fetching blogs:', error);
     res.status(500).json({ error: 'Internal server error' });
@@ -168,6 +208,25 @@ const getBlogById = async (req, res) => {
     const parsedId = parseInt(id, 10); // Ensure ID is an integer
     if (isNaN(parsedId)) {
       return res.status(400).json({ error: 'Invalid blog ID' });
+    }
+
+    // Try to get from cache (excluding view count)
+    const cacheKey = `blog:data:${parsedId}`;
+    try {
+      const cachedBlog = await redis.get(cacheKey);
+      if (cachedBlog) {
+        // Increment view count in background
+        redis.incr(`blog:views:${parsedId}`).catch(e => console.error(e));
+        return res.json({ ...cachedBlog, views: await redis.get(`blog:views:${parsedId}`) || 0 });
+      }
+    } catch (err) {
+      console.error('Redis cache get error:', err);
+    }
+
+    const blog = await db.select('tbl_blogs', '*', 'id = ?', [parsedId]);
+
+    if (!blog) {
+      return res.status(404).json({ error: 'Blog not found' });
     }
 
     // Ensure blogData is a single object
@@ -198,7 +257,7 @@ const getBlogById = async (req, res) => {
    
     const comments = Array.isArray(commentsResult) ? commentsResult : commentsResult ? [commentsResult] : [];
 
-    res.json({
+    const finalResponse = {
       ...blogData,
       category,
       tags,
@@ -208,7 +267,16 @@ const getBlogById = async (req, res) => {
         created_at: new Date(comment.created_at),
         updated_at: comment.updated_at ? new Date(comment.updated_at) : null
       }))
-    });
+    };
+
+    res.json(finalResponse);
+
+    // Cache the response for 1 hour
+    try {
+      await redis.set(cacheKey, finalResponse, { ex: 3600 });
+    } catch (err) {
+      console.error('Redis cache set error:', err);
+    }
   } catch (error) {
     console.error('Error fetching blog:', error);
     res.status(500).json({ error: 'Internal server error' });
