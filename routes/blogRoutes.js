@@ -13,7 +13,8 @@ const {
   incrementShares,
   createComment,
   deleteComment,
-  getCommentsByBlogId
+  getCommentsByBlogId,
+  getBlogBySlug
 } = require('../controller/blogController');
 
 // Public routes
