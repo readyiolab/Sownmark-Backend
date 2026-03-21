@@ -271,6 +271,78 @@ const getBlogById = async (req, res) => {
 
     res.json(finalResponse);
 
+    // Cache the response for 1 hour
+    try {
+      await redis.set(cacheKey, finalResponse, { ex: 3600 });
+    } catch (err) {
+      console.error('Redis cache set error:', err);
+    }
+  } catch (error) {
+    console.error('Error fetching blog:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+const getBlogBySlug = async (req, res) => {
+  try {
+    const { slug } = req.params;
+    
+    // Try to get from cache
+    const cacheKey = `blog:slug:${slug}`;
+    try {
+      const cachedBlog = await redis.get(cacheKey);
+      if (cachedBlog) {
+        // Increment view count in background
+        redis.incr(`blog:views:${cachedBlog.id}`).catch(e => console.error(e));
+        return res.json({ ...cachedBlog, views: await redis.get(`blog:views:${cachedBlog.id}`) || 0 });
+      }
+    } catch (err) {
+      console.error('Redis cache get error:', err);
+    }
+
+    const blog = await db.select('tbl_blogs', '*', 'slug = ?', [slug]);
+
+    if (!blog) {
+      return res.status(404).json({ error: 'Blog not found' });
+    }
+
+    const blogData = blog;
+    let category = [];
+    let tags = [];
+
+    try {
+      category = blogData.category ? JSON.parse(blogData.category) : [];
+      tags = blogData.tags ? JSON.parse(blogData.tags) : [];
+    } catch (parseError) {
+      console.error('Error parsing category or tags:', parseError);
+    }
+
+    // Fetch comments
+    const commentsResult = await db.select('tbl_comments', '*', 'blog_id = ?', [blogData.id]);
+    const comments = Array.isArray(commentsResult) ? commentsResult : commentsResult ? [commentsResult] : [];
+
+    // Increment view count in Redis
+    let viewCount = 0;
+    try {
+      viewCount = await redis.incr(`blog:views:${blogData.id}`);
+    } catch (e) {
+      console.error('Redis incr error:', e);
+    }
+
+    const finalResponse = {
+      ...blogData,
+      category,
+      tags,
+      views: viewCount,
+      comments: comments.map(comment => ({
+        ...comment,
+        created_at: new Date(comment.created_at),
+        updated_at: comment.updated_at ? new Date(comment.updated_at) : null
+      }))
+    };
+
+    res.json(finalResponse);
+
     // Cache by slug for 1 hour
     try {
       await redis.set(cacheKey, finalResponse, { ex: 3600 });
