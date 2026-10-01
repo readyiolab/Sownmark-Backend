@@ -1,33 +1,42 @@
 const mysql = require("mysql");
-const { dbHost,dbName,dbPass,dbUser } = require("../config/dotenvconfg");
+const { dbHost, dbName, dbPass, dbUser } = require("../config/dotenvconfg");
 
 class Database {
   constructor() {
-    // this.host = "localhost";
-    // this.username = "root";
-    // this.password = "";
-    // this.database = "db_sownmark"; 
     this.host = dbHost;
     this.username = dbUser;
     this.password = dbPass;
     this.database = dbName;
-    this.conn = mysql.createConnection({
+
+    // Use a high-performance connection pool instead of a single fragile connection
+    this.pool = mysql.createPool({
+      connectionLimit: 15,
       host: this.host,
       user: this.username,
       password: this.password,
       database: this.database,
+      charset: 'utf8mb4',
+      acquireTimeout: 10000,
+      connectTimeout: 10000,
+      waitForConnections: true,
+      queueLimit: 0,
     });
 
-    this.connect();
-  }
-
-  connect() {
-    this.conn.connect((err) => {
+    // Test initial connectivity
+    this.pool.getConnection((err, connection) => {
       if (err) {
-        console.error("Database Connectivity Error:", err);
+        console.error("Database Pool Connectivity Error:", err.message);
         return;
       }
-      console.log("Connected to database successfully!");
+      if (connection) {
+        connection.release();
+        console.log("Database connection pool established successfully!");
+      }
+    });
+
+    // Handle pool errors gracefully without crashing
+    this.pool.on('error', (err) => {
+      console.error('Unexpected database pool error:', err.message);
     });
   }
 
@@ -41,12 +50,12 @@ class Database {
       console.log(sql, params);
     }
     return new Promise((resolve, reject) => {
-      this.conn.query(sql, params, (err, results) => {
+      this.pool.query(sql, params, (err, results) => {
         if (err) {
           reject(err);
           return;
         }
-        resolve(results[0]); // Returns first row or undefined if no results
+        resolve(results ? results[0] : undefined);
       });
     });
   }
@@ -68,12 +77,12 @@ class Database {
       console.log(sql, params);
     }
     return new Promise((resolve, reject) => {
-      this.conn.query(sql, params, (err, results) => {
+      this.pool.query(sql, params, (err, results) => {
         if (err) {
           reject(err);
           return;
         }
-        resolve(results); // Returns all rows
+        resolve(results || []);
       });
     });
   }
@@ -84,7 +93,7 @@ class Database {
       console.log(sql, data);
     }
     return new Promise((resolve, reject) => {
-      this.conn.query(sql, data, (err, result) => {
+      this.pool.query(sql, data, (err, result) => {
         if (err) {
           reject(err);
           return;
@@ -109,7 +118,7 @@ class Database {
       console.log(sql, [form_data, ...params]);
     }
     return new Promise((resolve, reject) => {
-      this.conn.query(sql, [form_data, ...params], (err, result) => {
+      this.pool.query(sql, [form_data, ...params], (err, result) => {
         if (err) {
           reject(err);
           return;
@@ -133,13 +142,14 @@ class Database {
       console.log(sql, params);
     }
     return new Promise((resolve, reject) => {
-      this.conn.query(sql, params, (err, result) => {
+      this.pool.query(sql, params, (err, result) => {
         if (err) {
           reject(err);
           return;
         }
         resolve({
           status: true,
+          affectedRows: result.affectedRows,
           info: result.info,
         });
       });
@@ -147,35 +157,35 @@ class Database {
   }
 
   query(sql, params = [], print = false) {
-  if (print) {
-    console.log(sql, params);
-  }
-  return new Promise((resolve, reject) => {
-    this.conn.query(sql, params, (err, results) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      resolve({
-        status: true,
-        affectedRows: results.affectedRows,
-        info: results.info
+    if (print) {
+      console.log(sql, params);
+    }
+    return new Promise((resolve, reject) => {
+      this.pool.query(sql, params, (err, results) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        resolve({
+          status: true,
+          affectedRows: results ? results.affectedRows : 0,
+          info: results ? results.info : ''
+        });
       });
     });
-  });
-}
+  }
 
   queryAll(sql, params = [], print = false) {
     if (print) {
       console.log(sql, params);
     }
     return new Promise((resolve, reject) => {
-      this.conn.query(sql, params, (err, results) => {
+      this.pool.query(sql, params, (err, results) => {
         if (err) {
           reject(err);
           return;
         }
-        resolve(results);
+        resolve(results || []);
       });
     });
   }
@@ -185,7 +195,7 @@ class Database {
       console.log(sql, params);
     }
     return new Promise((resolve, reject) => {
-      this.conn.query(sql, params, (err, result) => {
+      this.pool.query(sql, params, (err, result) => {
         if (err) {
           reject(err);
           return;

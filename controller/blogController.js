@@ -169,31 +169,47 @@ const deleteBlog = async (req, res) => {
 
 const getAllBlogs = async (req, res) => {
   try {
-    // Try to get from cache
+    // Try to get from cache with a fast 400ms timeout
     try {
-      const cachedBlogs = await redis.get('blog:all');
-      if (cachedBlogs) {
+      const cachedBlogs = await Promise.race([
+        redis.get('blog:all'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Redis timeout')), 400))
+      ]);
+      if (cachedBlogs && Array.isArray(cachedBlogs)) {
         return res.json(cachedBlogs);
       }
     } catch (err) {
-      console.error('Redis get all error:', err);
+      // Redis skipped or timed out, continue to database
     }
 
-    const blogs = await db.selectAll('tbl_blogs');
-    const formattedBlogs = blogs.map((blog) => ({
-      ...blog,
-      category: JSON.parse(blog.category || '[]'),
-      tags: JSON.parse(blog.tags || '[]'),
-    }));
+    // Select only the columns needed for listings and statistics (OMIT heavy 'content' column!)
+    const columns = 'id, title, slug, excerpt, category, image, author, author_bio, status, read_time, tags, is_featured, likes, shares, comments, created_at, published_at';
+    const blogs = await db.selectAll('tbl_blogs', columns, '', [], 'ORDER BY created_at DESC');
+
+    const formattedBlogs = blogs.map((blog) => {
+      let parsedCategory = [];
+      let parsedTags = [];
+      try {
+        parsedCategory = JSON.parse(blog.category || '[]');
+      } catch {
+        parsedCategory = typeof blog.category === 'string' ? blog.category.split(',').map(c => c.trim()) : [];
+      }
+      try {
+        parsedTags = JSON.parse(blog.tags || '[]');
+      } catch {
+        parsedTags = typeof blog.tags === 'string' ? blog.tags.split(',').map(t => t.trim()) : [];
+      }
+      return {
+        ...blog,
+        category: parsedCategory,
+        tags: parsedTags,
+      };
+    });
    
     res.json(formattedBlogs);
 
-    // Store in cache for 30 minutes
-    try {
-      await redis.set('blog:all', formattedBlogs, { ex: 1800 });
-    } catch (err) {
-      console.error('Redis set all error:', err);
-    }
+    // Asynchronously store in cache without blocking the HTTP response
+    redis.set('blog:all', formattedBlogs, { ex: 1800 }).catch(() => {});
   } catch (error) {
     console.error('Error fetching blogs:', error);
     res.status(500).json({ error: 'Internal server error' });
