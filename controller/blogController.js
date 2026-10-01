@@ -426,17 +426,13 @@ const createComment = async (req, res) => {
     }
 
     const commentData = {
-      blog_id: parseInt(id),
+      blog_id: parseInt(id, 10),
       content,
       created_at: new Date(),
-      user_name: user_name || 'Anonymous', // Default to Anonymous if no name
-      user_email: user_email || null, // Store email if provided, else null
+      user_name: user_name ? user_name.trim() : 'Anonymous', // Default to Anonymous if no name
+      user_email: user_email ? user_email.trim() : null, // Store email if provided, else null
+      user_id: user_id ? parseInt(user_id, 10) : 0, // Fallback to 0 for guest users to prevent MySQL ER_NO_DEFAULT_FOR_FIELD
     };
-
-    // Add user_id if provided (for authenticated users)
-    if (user_id) {
-      commentData.user_id = parseInt(user_id);
-    }
 
     const result = await db.insert('tbl_comments', commentData);
 
