@@ -1,14 +1,6 @@
 const validateContactForm = (req, res, next) => {
     const { name, email, subject, message } = req.body;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    const validSubjects = [
-        'Digital Marketing Course Inquiry',
-        'Hiring Needs',
-        'Agency Services',
-        'Website Development',
-        'General Inquiry'
-    ];
-
     if (!name || !email || !subject || !message) {
         return res.status(400).json({ error: 'All required fields must be filled' });
     }
@@ -17,8 +9,8 @@ const validateContactForm = (req, res, next) => {
         return res.status(400).json({ error: 'Invalid email format' });
     }
 
-    if (!validSubjects.includes(subject)) {
-        return res.status(400).json({ error: 'Invalid subject selected' });
+    if (typeof subject !== 'string' || subject.trim().length === 0) {
+        return res.status(400).json({ error: 'Valid subject is required' });
     }
 
     next();

@@ -16,24 +16,17 @@ const submitContactForm = async (req, res) => {
         }
 
         // Validate subject
-        const validSubjects = [
-            'Digital Marketing Course Inquiry',
-            'Hiring Needs',
-            'Agency Services',
-            'Website Development',
-            'General Inquiry'
-        ];
-        if (!validSubjects.includes(subject)) {
-            return res.status(400).json({ error: 'Invalid subject selected' });
+        if (!subject || typeof subject !== 'string' || subject.trim().length === 0) {
+            return res.status(400).json({ error: 'Valid subject is required' });
         }
 
         // Insert form data into database
         const result = await db.insert('tbl_contact_messages', {
-            name,
-            email,
-            phone,
-            subject,
-            message,
+            name: name.trim(),
+            email: email.trim(),
+            phone: phone ? phone.trim() : '',
+            subject: subject.trim().slice(0, 255),
+            message: message.trim(),
             created_at: new Date()
         });
 
